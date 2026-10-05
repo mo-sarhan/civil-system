@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "civil-registry-backend"
+version = "1.0.0"
+description = "Civil registry and family-tree backend (FastAPI + PostgreSQL)"
+requires-python = ">=3.12"
+readme = "../README.md"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["alembic/versions", ".venv", "__pycache__"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "C4",  # comprehensions
+    "RUF", # ruff-specific
+    "ANN", # flake8-annotations
+]
+ignore = [
+    "ANN401", # allow Any
+    "B008",   # FastAPI Depends() in defaults
+    "RUF001", # ambiguous arabic characters in strings are intentional
+    "RUF002",
+    "RUF003",
+    "E501",   # line length handled by black
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ANN", "S101"]
+"alembic/env.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: marks tests as slow",
+    "perf: performance / scale tests",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+omit = [
+    "*/alembic/*",
+    "*/tests/*",
+    "*/__main__.py",
+]
+
+[tool.coverage.report]
+precision = 1
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@abstractmethod",
+    "if __name__ == .__main__.:",
+]

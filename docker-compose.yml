@@ -1,0 +1,94 @@
+# ---------------------------------------------------------------------------
+# Civil Registry & Family Tree - local and single-host production stack.
+#
+#   cp .env.example .env && make up
+#
+# Secrets come from `.env` (never committed). Without a `.env`, every variable
+# below falls back to a development-only default.
+# ---------------------------------------------------------------------------
+
+name: civil-system
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-civil}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+      POSTGRES_DB: ${POSTGRES_DB:-civil_registry}
+      # Deterministic collation for the Arabic search functions.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+      TZ: ${TZ:-Africa/Cairo}
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/db-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-civil} -d ${POSTGRES_DB:-civil_registry}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      # Repository root: the image needs both backend/ and the sample file.
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      DEBUG: ${DEBUG:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      TZ: ${TZ:-Africa/Cairo}
+
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-civil}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+      POSTGRES_DB: ${POSTGRES_DB:-civil_registry}
+
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env - generate one with make secret}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-14}
+      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-12}
+
+      MAX_LOGIN_ATTEMPTS: ${MAX_LOGIN_ATTEMPTS:-5}
+      LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+      LOGIN_RATE_LIMIT_PER_MINUTE: ${LOGIN_RATE_LIMIT_PER_MINUTE:-10}
+
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+
+      MIN_PARENT_AGE_YEARS: ${MIN_PARENT_AGE_YEARS:-12}
+      MAX_PAGE_SIZE: ${MAX_PAGE_SIZE:-200}
+      DEFAULT_PAGE_SIZE: ${DEFAULT_PAGE_SIZE:-25}
+      MASK_NATIONAL_ID_ROLES: ${MASK_NATIONAL_ID_ROLES:-viewer}
+      AUDIT_LOG_ENABLED: ${AUDIT_LOG_ENABLED:-true}
+
+      IMPORT_MAX_ROWS: ${IMPORT_MAX_ROWS:-2000000}
+      IMPORT_CHUNK_SIZE: ${IMPORT_CHUNK_SIZE:-5000}
+      IMPORT_WORKER_THREADS: ${IMPORT_WORKER_THREADS:-2}
+      IMPORT_STORAGE_DIR: /data/uploads
+      # The container applies `alembic upgrade head` before serving.
+      AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
+
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+    volumes:
+      - uploads:/data/uploads
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+
+volumes:
+  pgdata:
+  uploads:

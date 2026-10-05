@@ -1,0 +1,41 @@
+# Keep the build context small and never ship secrets or caches into the image.
+.git
+.gitignore
+.github
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+
+# Python
+**/.venv
+venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.test-uploads
+.coverage
+htmlcov
+
+# Node / frontend (not part of the backend image)
+frontend/node_modules
+frontend/dist
+
+# Docs and local data
+README.md
+docs/
+uploads/
+exports/
+logs/
+*.log
+.DS_Store
+.idea
+.vscode

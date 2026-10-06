@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { select, zoom, zoomIdentity, type ZoomBehavior } from "d3";
+import { select, zoom, zoomIdentity, zoomTransform, type ZoomBehavior } from "d3";
 import { api, errorMessage } from "../lib/api";
 import type { FamilyTree, Person, TreeNode } from "../lib/types";
 import { COL_GAP, COL_W, ROW_GAP, ROW_H, layoutTree } from "../lib/treeLayout";
@@ -46,15 +46,19 @@ export default function FamilyTreePage() {
 
   const svgRef = useRef<SVGSVGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const zoomGRef = useRef<SVGGElement>(null);
   const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
-  const [view, setView] = useState({ x: PAD, y: PAD, k: 1 });
 
   useEffect(() => {
     const svgEl = svgRef.current;
     if (!svgEl) return;
     const behavior = zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.2, 3])
-      .on("zoom", (event) => setView(event.transform));
+      .on("zoom", (event) => {
+        if (zoomGRef.current) {
+          select(zoomGRef.current).attr("transform", event.transform.toString());
+        }
+      });
     zoomRef.current = behavior;
     select(svgEl).call(behavior);
     return () => {
@@ -62,21 +66,37 @@ export default function FamilyTreePage() {
     };
   }, []);
 
-  // Centre the tree when new data arrives.
-  useEffect(() => {
-    if (!layout || !wrapRef.current) return;
-    const containerW = wrapRef.current.clientWidth;
+  const applyTransform = useCallback((transform: { x: number; y: number; k: number }) => {
+    if (!zoomRef.current || !svgRef.current) return;
+    select(svgRef.current).call(zoomRef.current.transform, zoomIdentity.translate(transform.x, transform.y).scale(transform.k));
+  }, []);
+
+  const centerView = useCallback(() => {
+    if (!layout) return;
+    const containerW = wrapRef.current?.clientWidth ?? 800;
     const k = Math.min(1, (containerW - 32) / layout.width);
     const x = Math.max(PAD, (containerW - layout.width * k) / 2);
-    const next = { x, y: PAD, k };
-    setView(next);
-    if (zoomRef.current && svgRef.current) {
-      select(svgRef.current).call(
-      zoomRef.current.transform,
-      zoomIdentity.translate(next.x, next.y).scale(next.k),
-    );
-    }
-  }, [layout]);
+    applyTransform({ x, y: PAD, k });
+  }, [layout, applyTransform]);
+
+  const stepZoom = useCallback(
+    (factor: number) => {
+      if (!svgRef.current || !wrapRef.current) return;
+      const current = zoomTransform(svgRef.current);
+      const k = Math.min(3, Math.max(0.2, current.k * factor));
+      const containerW = wrapRef.current.clientWidth;
+      const containerH = wrapRef.current.clientHeight;
+      const x = containerW / 2 - ((containerW / 2 - current.x) * k) / current.k;
+      const y = containerH / 2 - ((containerH / 2 - current.y) * k) / current.k;
+      applyTransform({ x, y, k });
+    },
+    [applyTransform],
+  );
+
+  // Centre the tree when new data arrives.
+  useEffect(() => {
+    centerView();
+  }, [centerView]);
 
   const [hoverId, setHoverId] = useState<number | null>(null);
   const hovered = hoverId ? treeQuery.data?.nodes.find((n) => n.id === hoverId) : null;
@@ -116,24 +136,33 @@ export default function FamilyTreePage() {
               }}
             />
           </div>
-          <button
-            type="button"
-            onClick={() => {
-              const k = Math.min(1, ((wrapRef.current?.clientWidth ?? 800) - 32) / layout.width);
-              const x = Math.max(PAD, ((wrapRef.current?.clientWidth ?? 800) - layout.width * k) / 2);
-              const next = { x, y: PAD, k };
-              setView(next);
-              if (zoomRef.current && svgRef.current) {
-                select(svgRef.current).call(
-                  zoomRef.current.transform,
-                  zoomIdentity.translate(next.x, next.y).scale(next.k),
-                );
-              }
-            }}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            توسيط
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => stepZoom(1.3)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              aria-label="تكبير"
+              title="تكبير"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => stepZoom(1 / 1.3)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              aria-label="تصغير"
+              title="تصغير"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              onClick={centerView}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              توسيط
+            </button>
+          </div>
         </div>
       </header>
 
@@ -152,7 +181,7 @@ export default function FamilyTreePage() {
           height="100%"
           className="cursor-grab active:cursor-grabbing"
         >
-          <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
+          <g ref={zoomGRef}>
             <g>
               {layout.spousePairs.map(([a, b]) => {
                 const A = layout.rows.flat().find((n) => n.person.id === a);
@@ -214,7 +243,7 @@ export default function FamilyTreePage() {
           </g>
         </svg>
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-white/90 px-3 py-1.5 text-xs text-slate-500 shadow-sm ring-1 ring-slate-200" dir="rtl">
-          اسحب للتحريك · عجلة الفأرة للتكبير · انقر على شخص لتوسيط الشجرة عليه
+          اسحب للتحريك · عجلة الفأرة للتكبير أو الأزرار +/− · انقر على شخص لتوسيط الشجرة عليه
         </div>
       </div>
     </div>

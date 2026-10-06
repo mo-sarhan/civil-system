@@ -377,6 +377,27 @@ class ImportService:
             raise NotFoundError(Messages.IMPORT_JOB_NOT_FOUND)
         return job
 
+    def cancel_job(self, job: ImportJob) -> ImportJob:
+        """Mark a job cancelled.
+
+        A running commit checks this status between chunks and stops, so rows it
+        already committed stay committed; a job that is still pending or ready is
+        cancelled outright.
+        """
+        if job.status in {ImportStatus.COMPLETED.value, ImportStatus.CANCELLED.value}:
+            raise ValidationError(Messages.IMPORT_INVALID_STATUS)
+        was_processing = job.status == ImportStatus.PROCESSING.value
+        job.status = ImportStatus.CANCELLED.value
+        job.message = (
+            "تم إلغاء الاستيراد - تم حفظ الصفوف التي تمت معالجتها"
+            if was_processing and (job.success_rows or job.created_rows or job.updated_rows)
+            else "تم إلغاء الاستيراد"
+        )
+        job.committed_at = utcnow()
+        job.updated_at = utcnow()
+        self.db.commit()
+        return job
+
     def _path(self, job: ImportJob) -> Path:
         if not job.stored_path:
             raise ValidationError(Messages.IMPORT_FILE_EMPTY)
@@ -799,6 +820,13 @@ class ImportService:
                     if len(chunk) >= chunk_size:
                         flush(chunk)
                         chunk = []
+                        # Pull any cancel written by another session. This also
+                        # discards local uncommitted job changes, so all writes
+                        # below must come after it.
+                        session.refresh(job)
+                        if job.status == ImportStatus.CANCELLED.value:
+                            self._finalise_cancelled(session, job, stats, processed, total_rows)
+                            return {"status": "cancelled"}
                         job.processed_rows = processed
                         job.progress = int(100 * processed / max(1, total_rows))
                         job.created_rows = stats["created"]
@@ -808,6 +836,10 @@ class ImportService:
 
             flush(chunk)
 
+            session.refresh(job)
+            if job.status == ImportStatus.CANCELLED.value:
+                self._finalise_cancelled(session, job, stats, processed, total_rows)
+                return {"status": "cancelled"}
             job.processed_rows = processed
             job.total_rows = total_rows
             job.created_rows = stats["created"]
@@ -844,6 +876,31 @@ class ImportService:
             return {"status": "failed", "error": str(exc)}
         finally:
             session.close()
+
+    @staticmethod
+    def _finalise_cancelled(
+        session: Session,
+        job: ImportJob,
+        stats: dict[str, int],
+        processed: int,
+        total_rows: int,
+    ) -> None:
+        """Close out a job that a user cancelled mid-flight."""
+        job.processed_rows = processed
+        job.total_rows = total_rows
+        job.created_rows = stats["created"]
+        job.updated_rows = stats["updated"]
+        job.success_rows = stats["created"] + stats["updated"]
+        job.failed_rows = stats["failed"]
+        job.progress = int(100 * processed / max(1, total_rows))
+        job.status = ImportStatus.CANCELLED.value
+        job.message = (
+            f"تم إلغاء الاستيراد - تم حفظ {job.success_rows} سجل قبل الإلغاء"
+            if job.success_rows
+            else "تم إلغاء الاستيراد"
+        )
+        job.updated_at = utcnow()
+        session.commit()
 
     def _upsert_chunk(
         self,

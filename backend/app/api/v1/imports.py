@@ -202,12 +202,42 @@ def commit_job(
     return {"job": _job_out(job), "message": "بدأ الاستيراد في الخلفية"}
 
 
+@router.post("/jobs/{job_id}/cancel", response_model=dict, summary="إلغاء مهمة استيراد")
+def cancel_job(
+    job_id: int,
+    request: Request,
+    db: DbSession,
+    user: ImporterUser,
+) -> dict[str, Any]:
+    """Stop a queued or running import.
+
+    A job already in the ``processing`` state stops after the chunk it is
+    writing; rows committed so far are kept.
+    """
+    service = ImportService(db)
+    job = service.cancel_job(service.get_job(job_id))
+    audit_service.record(
+        db,
+        action=AuditAction.IMPORT,
+        user_id=user.id,
+        username=user.username,
+        entity="import_job",
+        entity_id=job.id,
+        details={"stage": "cancel"},
+        ip=get_client_ip(request),
+    )
+    db.commit()
+    return {"job": _job_out(job), "message": job.message}
+
+
 @router.delete("/jobs/{job_id}", response_model=dict, summary="حذف مهمة استيراد")
 def delete_job(job_id: int, db: DbSession, user: ImporterUser) -> dict[str, str]:
     service = ImportService(db)
     job = service.get_job(job_id)
     from pathlib import Path
 
+    if job.status == ImportStatus.PROCESSING.value:
+        raise ValidationError(Messages.IMPORT_INVALID_STATUS)
     if job.stored_path:
         Path(job.stored_path).unlink(missing_ok=True)
     db.delete(job)

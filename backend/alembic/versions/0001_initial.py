@@ -50,9 +50,7 @@ def upgrade() -> None:
             server_default=sa.func.now(),
         ),
         sa.UniqueConstraint("username", name="uq_users_username"),
-        sa.CheckConstraint(
-            "role IN ('admin','editor','viewer')", name="ck_users_role"
-        ),
+        sa.CheckConstraint("role IN ('admin','editor','viewer')", name="ck_users_role"),
     )
 
     # --- person ---------------------------------------------------------
@@ -103,12 +101,8 @@ def upgrade() -> None:
             "death_date IS NULL OR birth_date IS NULL OR death_date >= birth_date",
             name="ck_person_death_after_birth",
         ),
-        sa.CheckConstraint(
-            "father_id IS NULL OR father_id <> id", name="ck_person_not_own_father"
-        ),
-        sa.CheckConstraint(
-            "mother_id IS NULL OR mother_id <> id", name="ck_person_not_own_mother"
-        ),
+        sa.CheckConstraint("father_id IS NULL OR father_id <> id", name="ck_person_not_own_father"),
+        sa.CheckConstraint("mother_id IS NULL OR mother_id <> id", name="ck_person_not_own_mother"),
         sa.CheckConstraint(
             "father_id IS NULL OR mother_id IS NULL OR father_id <> mother_id",
             name="ck_person_parents_distinct",
@@ -118,9 +112,7 @@ def upgrade() -> None:
     op.create_index("ix_person_mother_id", "person", ["mother_id"])
     op.create_index("ix_person_merged_into_id", "person", ["merged_into_id"])
     op.create_index("ix_person_birth_date", "person", ["birth_date"])
-    op.create_index(
-        "ix_person_birth_year", "person", [sa.text("date_part('year', birth_date)")]
-    )
+    op.create_index("ix_person_birth_year", "person", [sa.text("date_part('year', birth_date)")])
     op.create_index("ix_person_family_name", "person", ["family_name"])
     op.create_index(
         "ix_person_full_name_trgm",

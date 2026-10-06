@@ -44,7 +44,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["ANN", "S101"]
-"alembic/env.py" = ["E402"]
+# env.py must call import_all_models() right after the imports so that
+# Base.metadata is fully populated before the autogenerate target is read.
+"alembic/env.py" = ["E402", "I001"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

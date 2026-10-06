@@ -84,6 +84,7 @@ curl -X POST /api/v1/auth/login \
 | 2 | `POST /imports/jobs/{id}/mapping` | اختياري: `{mapping: {field: column_index}, linking_mode: none\|by_national_id\|by_name}` |
 | 3 | `POST /imports/jobs/{id}/validate` | تقرير `{total_rows, valid_rows, invalid_rows, errors_count, errors[{row, field, value, message, severity}], can_commit}` — بلا كتابة |
 | 4 | `POST /imports/jobs/{id}/commit` | `{skip_invalid: bool}` — 200 بحالة `processing`، ثم `GET /imports/jobs/{id}` حتى `completed`/`failed` |
+| — | `POST /imports/jobs/{id}/cancel` | إلغاء مهمة `pending`/`ready`، أو إيقاف مهمة قيد التنفيذ عند نهاية الدفعة الحالية (الصفوف المحفوظة تبقى) |
 
 - `row` في الأخطاء = رقم صف الملف (العناوين = 1).
 - `linking_mode`:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.utils.messages import Messages
+
 NEW_PERSON = {
     "national_id": "29005151200564",
     "full_name": "مي أحمد محمد",
@@ -176,11 +178,47 @@ class TestUpdate:
             == 404
         )
 
-    def test_parent_cannot_become_a_child(self, client, auth, sample_family) -> None:
-        # 1 is the grandfather of 13; linking 13 as a parent of 1 is a cycle.
+    def test_descendant_cannot_become_an_ancestor(self, client, auth, sample_family) -> None:
+        """The cycle guard itself must reject a parent link that closes a loop.
+
+        The gender and age guards run first, so a direct loop (``1`` <- ``13``)
+        is caught by them and never reaches the cycle check.  The only way to
+        reach it is a parent whose birth date is unknown, because that skips the
+        age comparison entirely -- which is exactly the registry case of someone
+        born before civil registration.
+        """
+
+        def _new_son(parent_id: int | None) -> int:
+            response = client.post(
+                "/api/v1/persons",
+                headers=auth("editor"),
+                json={"full_name": "ابن مجهول", "gender": "M", "father_id": parent_id},
+            )
+            assert response.status_code == 201, response.text
+            return response.json()["id"]
+
+        # A two-generation male line below sample 13, both with no birth date
+        # so the parent-age check is skipped.
+        grandson = _new_son(sample_family["13"])
+        great_grandson = _new_son(grandson)
+
+        # Close the loop: the great-grandson is already a descendant of 13.
+        response = client.patch(
+            f"/api/v1/persons/{sample_family['13']}",
+            headers=auth("admin"),
+            json={"father_id": great_grandson},
+        )
+        assert response.status_code == 400, response.text
+        assert Messages.PARENT_CYCLE in response.json()["detail"]
+
+    def test_parent_gender_and_age_guards_precede_the_cycle_check(
+        self, client, auth, sample_family
+    ) -> None:
+        """A loop built from dated relatives is reported by the cheaper guard."""
         response = client.patch(
             f"/api/v1/persons/{sample_family['1']}",
             headers=auth("admin"),
             json={"father_id": sample_family["13"]},
         )
-        assert response.status_code in (400, 409, 422)
+        assert response.status_code == 400, response.text
+        assert "دورة" not in response.json()["detail"]

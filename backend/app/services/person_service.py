@@ -362,7 +362,8 @@ class PersonService:
         father, mother = self._load_parents(father_id, mother_id, person.id)
         self._validate_parent_genders(father, mother)
         self._validate_parent_age(merged["birth_date"], father, mother)
-        cycle_service.would_create_cycle(self.db, person.id, father_id, mother_id)
+        if cycle_service.would_create_cycle(self.db, person.id, father_id, mother_id):
+            raise ValidationError(Messages.PARENT_CYCLE)
 
         if (
             data.birth_date

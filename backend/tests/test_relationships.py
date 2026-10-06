@@ -250,25 +250,19 @@ class TestRelationshipFinder:
 
         # Both query orders describe the same pair, the same way round.
         for a, b in ((grandfather, granddaughter), (granddaughter, grandfather)):
-            body = client.get(
-                f"/api/v1/relationship?a={a}&b={b}", headers=auth("viewer")
-            ).json()
+            body = client.get(f"/api/v1/relationship?a={a}&b={b}", headers=auth("viewer")).json()
             assert body["explanation"] == "محمد أحمد السيد هو جد نور حسن عبد الله"
             assert body["relation"] == "جد"
 
         # A female senior gets the feminine pronoun and label.
         mother = sample_family["6"]  # منى
         son = sample_family["9"]  # عمر
-        body = client.get(
-            f"/api/v1/relationship?a={mother}&b={son}", headers=auth("viewer")
-        ).json()
+        body = client.get(f"/api/v1/relationship?a={mother}&b={son}", headers=auth("viewer")).json()
         assert body["explanation"] == "منى إبراهيم يوسف هي أم عمر أحمد محمد"
         assert body["relation"] == "أم"
         assert body["relation_from_b"] == "ابن"
 
-    def test_in_law_explanations_avoid_slash_forms(
-        self, client, auth, sample_family
-    ) -> None:
+    def test_in_law_explanations_avoid_slash_forms(self, client, auth, sample_family) -> None:
         """No "X/Y" placeholders: the label follows the person's gender."""
         husband = sample_family["3"]  # أحمد, married to منى
         brother_in_law = sample_family["4"]  # محمود, brother of أحمد
@@ -278,6 +272,7 @@ class TestRelationshipFinder:
         ).json()
         assert "/" not in body["explanation"]
         assert body["explanation"]
+
     def test_grandparent_to_grandson(self, client, auth, sample_family) -> None:
         body = client.get(
             f"/api/v1/relationship?a={sample_family['1']}&b={sample_family['9']}",

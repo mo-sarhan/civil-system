@@ -265,6 +265,29 @@ class TestCommit:
         assert "جديد كامل عبد الرحمن" in names
         assert "جديدة ثانية عبد الرحمن" in names
 
+    def test_progress_survives_every_chunk_boundary(
+        self, client, auth, sample_family, monkeypatch
+    ) -> None:
+        """`session.refresh` drops local job state, so re-set it after each read."""
+        rows = [NEW_ROWS[0]] * 30
+        job = _upload(client, auth, CSV_HEADER + "\n" + "\n".join(rows)).json()["job"]
+        client.post(f"/api/v1/imports/jobs/{job['id']}/validate", headers=auth("editor"))
+        # Force many chunk boundaries instead of one big final write.
+        monkeypatch.setattr(settings, "import_chunk_size", 5)
+        assert (
+            client.post(
+                f"/api/v1/imports/jobs/{job['id']}/commit", json={}, headers=auth("editor")
+            ).status_code
+            == 200
+        )
+        final = _wait_for_job(client, auth, job["id"])
+        assert final["status"] == "completed"
+        assert final["processed_rows"] == 30, final
+        assert final["created_rows"] == 1
+        assert final["updated_rows"] == 29
+        assert final["progress"] == 100
+        assert final["success_rows"] == 30
+
     def test_commit_updates_an_existing_record(self, client, auth, sample_family, db) -> None:
         job = _upload(client, auth, CSV_HEADER + "\n" + NEW_ROWS[2]).json()["job"]
         client.post(f"/api/v1/imports/jobs/{job['id']}/validate", headers=auth("editor"))
@@ -304,6 +327,153 @@ class TestCommit:
             == 200
         )
         _wait_for_job(client, auth, job["id"])
+
+
+class TestCancel:
+    def test_pending_job_can_be_cancelled(self, client, auth, sample_family) -> None:
+        job = _upload(client, auth, CSV_HEADER + "\n" + NEW_ROWS[0]).json()["job"]
+        response = client.post(f"/api/v1/imports/jobs/{job['id']}/cancel", headers=auth("editor"))
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["job"]["status"] == "cancelled"
+        assert "أُلغي" in body["message"] or "إلغاء" in body["message"]
+
+        # A cancelled job can no longer be committed.
+        assert (
+            client.post(
+                f"/api/v1/imports/jobs/{job['id']}/commit", json={}, headers=auth("editor")
+            ).status_code
+            == 400
+        )
+
+    def test_cancelling_twice_is_rejected(self, client, auth, sample_family) -> None:
+        job = _upload(client, auth, CSV_HEADER + "\n" + NEW_ROWS[0]).json()["job"]
+        assert (
+            client.post(
+                f"/api/v1/imports/jobs/{job['id']}/cancel", headers=auth("editor")
+            ).status_code
+            == 200
+        )
+        assert (
+            client.post(
+                f"/api/v1/imports/jobs/{job['id']}/cancel", headers=auth("editor")
+            ).status_code
+            == 400
+        )
+
+    def test_cancel_writes_an_audit_entry(self, client, auth, sample_family, db) -> None:
+        job = _upload(client, auth, CSV_HEADER + "\n" + NEW_ROWS[0]).json()["job"]
+        client.post(f"/api/v1/imports/jobs/{job['id']}/cancel", headers=auth("editor"))
+        db.expire_all()
+        entry = (
+            db.query(AuditLog)
+            .filter(AuditLog.action == "IMPORT")
+            .order_by(AuditLog.id.desc())
+            .first()
+        )
+        assert entry.details["stage"] == "cancel"
+
+    def test_a_cancel_during_commit_stops_the_job(
+        self, client, auth, sample_family, users, db, monkeypatch
+    ) -> None:
+        """A cancel written mid-commit is honoured at the next chunk boundary.
+
+        The cancel is injected from a *second* session, the way the cancel
+        endpoint would, while the worker thread is inside its own transaction.
+        """
+        from app.db.session import SessionLocal
+        from app.models.import_job import ImportJob, ImportStatus
+        from app.services.import_service import ImportService
+
+        rows = [NEW_ROWS[0]] * 30  # enough rows for several chunks
+        job = _upload(client, auth, CSV_HEADER + "\n" + "\n".join(rows)).json()["job"]
+        assert (
+            client.post(
+                f"/api/v1/imports/jobs/{job['id']}/validate", headers=auth("editor")
+            ).status_code
+            == 200
+        )
+
+        monkeypatch.setattr(settings, "import_chunk_size", 5)
+
+        original = ImportService._upsert_chunk
+        cancelled = {"done": False}
+
+        def then_cancel(self, records, resolver, *, actor_id):
+            result = original(self, records, resolver, actor_id=actor_id)
+            if not cancelled["done"]:
+                cancelled["done"] = True
+                other = SessionLocal()
+                try:
+                    other.get(ImportJob, job["id"]).status = ImportStatus.CANCELLED.value
+                    other.commit()
+                finally:
+                    other.close()
+            return result
+
+        monkeypatch.setattr(ImportService, "_upsert_chunk", then_cancel)
+
+        service = ImportService(db)
+        result = service.commit_sync(service.get_job(job["id"]), actor_id=users["editor"].id)
+
+        assert result["status"] == "cancelled", result
+        assert cancelled["done"] is True
+
+        final = client.get(f"/api/v1/imports/jobs/{job['id']}", headers=auth("editor")).json()[
+            "job"
+        ]
+        assert final["status"] == "cancelled"
+        # It stopped early rather than running the whole file.
+        assert final["processed_rows"] < 30
+        assert final["progress"] < 100
+        # Rows written before the cancel are kept.
+        assert final["created_rows"] + final["updated_rows"] > 0
+
+    def test_a_delete_is_refused_while_a_job_is_processing(
+        self, client, auth, sample_family, users, db, monkeypatch
+    ) -> None:
+        """Deleting the row the worker is writing would orphan the thread."""
+        from app.services.import_service import ImportService
+
+        job = _upload(client, auth, CSV_HEADER + "\n" + NEW_ROWS[0]).json()["job"]
+        assert (
+            client.post(
+                f"/api/v1/imports/jobs/{job['id']}/validate", headers=auth("editor")
+            ).status_code
+            == 200
+        )
+        monkeypatch.setattr(settings, "import_chunk_size", 5)
+
+        original = ImportService._upsert_chunk
+        probe: dict[str, int] = {}
+
+        def then_probe(self, records, resolver, *, actor_id):
+            result = original(self, records, resolver, actor_id=actor_id)
+            if not probe:
+                probe["status"] = client.get(
+                    f"/api/v1/imports/jobs/{job['id']}", headers=auth("editor")
+                ).json()["job"]["status"]
+                probe["delete"] = client.delete(
+                    f"/api/v1/imports/jobs/{job['id']}", headers=auth("editor")
+                ).status_code
+            return result
+
+        monkeypatch.setattr(ImportService, "_upsert_chunk", then_probe)
+
+        service = ImportService(db)
+        service.commit_sync(service.get_job(job["id"]), actor_id=users["editor"].id)
+
+        assert probe["status"] == "processing"
+        assert probe["delete"] == 400
+
+    def test_viewers_cannot_cancel(self, client, auth, sample_family) -> None:
+        job = _upload(client, auth, CSV_HEADER + "\n" + NEW_ROWS[0]).json()["job"]
+        assert (
+            client.post(
+                f"/api/v1/imports/jobs/{job['id']}/cancel", headers=auth("viewer")
+            ).status_code
+            == 403
+        )
 
 
 class TestMappingTemplates:

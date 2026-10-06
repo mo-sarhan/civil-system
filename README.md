@@ -123,7 +123,7 @@ make dev                  # uvicorn --reload on :8000
 | القرابة | `/persons/{id}/parents`، `children`، `siblings`، `spouses`، `ancestors`، `descendants`، `relatives`، `tree`، `GET /relationship?a=&b=` |
 | الزواج | `GET/POST /marriages`، `PATCH/DELETE /marriages/{id}` |
 | التكرار | `GET /duplicates`، `GET /duplicates/compare`، `POST /duplicates/merge` |
-| الاستيراد | `/imports/upload`، `/imports/jobs/{id}/preview`، `/mapping`، `/validate`، `/commit`، `/imports/mapping-templates` |
+| الاستيراد | `/imports/upload`، `/imports/jobs/{id}/preview`، `/mapping`، `/validate`، `/commit`، `/cancel`، `/imports/mapping-templates` |
 | التصدير | `GET /export/persons`، `GET /export/tree-csv` |
 | الإحصاءات | `GET /stats`، `/stats/generations`، `/stats/birth-places`، `/stats/birth-years`، `/stats/largest-families`، `/stats/missing-links`، `/stats/data-quality` |
 | التدقيق | `GET /audit-log`، `/audit-log/actions`، `/audit-log/export` |
@@ -132,11 +132,13 @@ make dev                  # uvicorn --reload on :8000
 ## الاختبارات | Tests
 
 ```bash
-make test         # 204 tests against a real PostgreSQL (civil_registry_test)
+make test         # 212 tests against a real PostgreSQL (civil_registry_test)
+make test-cov     # same suite with a branch-coverage report (81.1%)
 ```
 
 الاختبارات تشغّل ترحيلات Alembic مرة واحدة لكل جلسة ثم تمسح الجداول قبل كل
-اختبار، وتستخدم عينة `sample_civil_registry.sql` الحقيقية.
+اختبار، وتستخدم عينة `sample_civil_registry.sql` الحقيقية. CI يشغّلها مع
+`--cov=app` ويُسقطها إذا نزلت التغطية تحت 80%.
 
 ## بنية المشروع | Repository layout
 

@@ -21,7 +21,7 @@ from app.db.session import engine
 DESCRIPTION = """
 ### نظام السجل المدني وشجرة العائلة
 
-واجهة برمجية لإدارة سجلات存在的问题 وعرض صلات القرابة بين الأفراد.
+واجهة برمجية لإدارة سجلات الأحوال المدنية وعرض صلات القرابة بين الأفراد.
 
 * **المصادقة**: JWT (access + refresh) مع تشفير كلمات المرور بـ argon2id.
 * **الأدوار**: `admin` (كل شيء)، `editor` (إنشاء/تعديل/استيراد)، `viewer` (قراءة فقط مع إخفاء رقم القومى).
@@ -33,6 +33,10 @@ DESCRIPTION = """
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging("DEBUG" if settings.debug else "INFO")
+    # Fail import jobs a dead process left in `processing` before we accept work.
+    from app.services.import_service import ImportService
+
+    ImportService.reap_stale_jobs()
     yield
     engine.dispose()
 

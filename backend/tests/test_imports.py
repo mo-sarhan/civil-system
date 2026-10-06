@@ -329,6 +329,78 @@ class TestCommit:
         _wait_for_job(client, auth, job["id"])
 
 
+class TestRecovery:
+    """Jobs orphaned by a process that died mid-commit must not stay stuck."""
+
+    @staticmethod
+    def _stuck_job(db) -> int:
+        from app.models.import_job import ImportJob, ImportStatus
+
+        job = ImportJob(
+            filename="stuck.csv",
+            status=ImportStatus.PROCESSING.value,
+            total_rows=100,
+            processed_rows=40,
+            progress=40,
+            message="جارٍ التنفيذ...",
+        )
+        db.add(job)
+        db.commit()
+        return job.id
+
+    def test_startup_reaps_an_orphaned_processing_job(self, db) -> None:
+        from app.models.import_job import ImportJob, ImportStatus
+        from app.services.import_service import ImportService
+
+        job_id = self._stuck_job(db)
+        assert ImportService.reap_stale_jobs() == 1
+
+        db.expire_all()
+        job = db.get(ImportJob, job_id)
+        assert job.status == ImportStatus.FAILED.value
+        assert "إعادة تشغيل" in job.message
+        assert job.progress == 40
+
+    def test_reaping_leaves_finished_jobs_alone(self, db) -> None:
+        from app.models.import_job import ImportJob, ImportStatus
+        from app.services.import_service import ImportService
+
+        stuck = self._stuck_job(db)
+        finished = ImportJob(filename="done.csv", status=ImportStatus.COMPLETED.value)
+        db.add(finished)
+        db.commit()
+
+        assert ImportService.reap_stale_jobs() == 1
+
+        db.expire_all()
+        assert db.get(ImportJob, stuck).status == ImportStatus.FAILED.value
+        assert db.get(ImportJob, finished.id).status == ImportStatus.COMPLETED.value
+
+    def test_a_positive_threshold_spares_a_recent_job(self, db) -> None:
+        """Multi-replica deployments keep live jobs by raising the threshold."""
+        from app.models.import_job import ImportJob, ImportStatus
+        from app.services.import_service import ImportService
+
+        job_id = self._stuck_job(db)
+        assert ImportService.reap_stale_jobs(older_than_minutes=30) == 0
+
+        db.expire_all()
+        assert db.get(ImportJob, job_id).status == ImportStatus.PROCESSING.value
+        # The default (single process) reaps regardless of age.
+        assert ImportService.reap_stale_jobs() == 1
+
+    def test_the_commit_pool_is_bounded_by_the_worker_setting(self) -> None:
+        """User-triggered commits must not spawn an unbounded number of threads."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        from app.services import import_service
+
+        pool = import_service._commit_executor()
+        assert isinstance(pool, ThreadPoolExecutor)
+        # `_max_workers` is the only way to observe the bound without timing tests.
+        assert pool._max_workers == max(1, settings.import_worker_threads)
+
+
 class TestCancel:
     def test_pending_job_can_be_cancelled(self, client, auth, sample_family) -> None:
         job = _upload(client, auth, CSV_HEADER + "\n" + NEW_ROWS[0]).json()["job"]

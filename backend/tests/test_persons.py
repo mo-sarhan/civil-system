@@ -119,7 +119,9 @@ class TestSearch:
         assert response.json()["total"] >= 1
 
     def test_search_with_no_hits_returns_an_empty_page(self, client, auth, sample_family) -> None:
-        response = client.get("/api/v1/persons?q=لاشيء 不存在", headers=auth("viewer"))
+        response = client.get(
+            "/api/v1/persons", params={"q": "زائر غير موجود"}, headers=auth("viewer")
+        )
         assert response.json()["total"] == 0
         assert response.json()["items"] == []
 

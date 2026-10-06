@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     import_chunk_size: int = 5000
     import_worker_threads: int = 2
     import_storage_dir: str = "/data/uploads"
+    #: Orphaned `processing` jobs are failed at startup. `0` reaps every such
+    #: job, which is correct when this process is the only one running. Raise it
+    #: (minutes) when several replicas share the database, so a replica booting
+    #: does not fail jobs another replica is still committing.
+    import_stale_minutes: int = 0
 
     #: Hard ceiling for a single export request; anything larger must be
     #: narrowed with filters so a download can never exhaust server memory.

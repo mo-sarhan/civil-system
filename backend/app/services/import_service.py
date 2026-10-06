@@ -19,9 +19,10 @@ import logging
 import re
 import threading
 from collections.abc import Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -43,6 +44,27 @@ logger = logging.getLogger(__name__)
 
 #: Maximum number of individual errors stored per job.
 MAX_REPORTED_ERRORS = 2000
+
+_executor: ThreadPoolExecutor | None = None
+_executor_lock = threading.Lock()
+
+
+def _commit_executor() -> ThreadPoolExecutor:
+    """Return the process-wide, bounded pool used for import commits.
+
+    Bounded on purpose: the commit endpoint is user-triggered, so without a
+    cap a burst of submissions would spawn one thread per job and starve the
+    server. Extra submissions queue instead.
+    """
+    global _executor
+    with _executor_lock:
+        if _executor is None:
+            _executor = ThreadPoolExecutor(
+                max_workers=max(1, settings.import_worker_threads),
+                thread_name_prefix="import",
+            )
+        return _executor
+
 
 LinkingMode = str  # "by_national_id" | "by_name" | "none"
 
@@ -710,23 +732,58 @@ class ImportService:
         actor_id: int | None,
         skip_invalid: bool = True,
     ) -> ImportJob:
-        """Start the background commit and return immediately."""
+        """Queue the background commit and return immediately."""
         if job.status != ImportStatus.READY.value:
             raise ValidationError(Messages.IMPORT_INVALID_STATUS)
         job.status = ImportStatus.PROCESSING.value
         job.progress = 0
         job.committed_by = actor_id
         job.message = "جارٍ التنفيذ..."
+        job.updated_at = utcnow()
         self.db.commit()
 
-        thread = threading.Thread(
-            target=self._commit_worker,
-            args=(job.id, actor_id, skip_invalid),
-            name=f"import-{job.id}",
-            daemon=True,
+        _commit_executor().submit(
+            ImportService._commit_worker,
+            job.id,
+            actor_id,
+            skip_invalid,
         )
-        thread.start()
         return job
+
+    @staticmethod
+    def reap_stale_jobs(*, older_than_minutes: int | None = None) -> int:
+        """Fail jobs left in ``processing`` by a process that died mid-commit.
+
+        ``older_than_minutes <= 0`` (the default) reaps every ``processing``
+        job, which is correct when this process is the only one running. Set
+        ``IMPORT_STALE_MINUTES`` to a positive value with several replicas:
+        commits heartbeat through ``updated_at`` at every chunk boundary, so a
+        live worker's job stays inside the threshold and is left alone.
+        """
+        minutes = (
+            settings.import_stale_minutes if older_than_minutes is None else older_than_minutes
+        )
+        session = SessionLocal()
+        try:
+            statement = select(ImportJob).where(ImportJob.status == ImportStatus.PROCESSING.value)
+            if minutes > 0:
+                statement = statement.where(
+                    ImportJob.updated_at < utcnow() - timedelta(minutes=minutes)
+                )
+            stale = session.execute(statement).scalars().all()
+            for job in stale:
+                job.status = ImportStatus.FAILED.value
+                job.message = (
+                    f"توقف الاستيراد بعد إعادة تشغيل الخادم عند {job.progress or 0}٪"
+                    " - أعد التحقق ثم أعد التنفيذ"
+                )
+                job.updated_at = utcnow()
+            session.commit()
+            if stale:
+                logger.warning("reaped %d orphaned import job(s)", len(stale))
+            return len(stale)
+        finally:
+            session.close()
 
     def commit_sync(
         self,
@@ -741,17 +798,23 @@ class ImportService:
         job.status = ImportStatus.PROCESSING.value
         job.progress = 0
         self.db.commit()
-        return self._commit_worker(job.id, actor_id, skip_invalid)
+        return ImportService._commit_worker(job.id, actor_id, skip_invalid)
 
-    def _commit_worker(
-        self, job_id: int, actor_id: int | None, skip_invalid: bool
-    ) -> dict[str, Any]:
+    @staticmethod
+    def _commit_worker(job_id: int, actor_id: int | None, skip_invalid: bool) -> dict[str, Any]:
         """Run the streaming upsert in its own session."""
         session = SessionLocal()
         try:
             job = session.get(ImportJob, job_id)
             if job is None:  # pragma: no cover - job deleted mid-flight
                 return {"status": "failed"}
+            if job.status != ImportStatus.PROCESSING.value:
+                # Cancelled or reaped while it waited in the queue.
+                return {"status": job.status}
+            # Heartbeat: proves this job is alive even if it sits in the queue
+            # or spends a long time between chunks.
+            job.updated_at = utcnow()
+            session.commit()
             path = Path(job.stored_path or "")
             linking_mode = job.linking_mode or "none"
             chunk_size = settings.import_chunk_size
@@ -762,7 +825,7 @@ class ImportService:
             failures: list[dict[str, Any]] = []
             chunk: list[RowRecord] = []
 
-            service = self.__class__(session)
+            service = ImportService(session)
             mapping = service._effective_mapping(job, path)
             resolver = LinkResolver(session, linking_mode)
 
@@ -825,20 +888,23 @@ class ImportService:
                         # below must come after it.
                         session.refresh(job)
                         if job.status == ImportStatus.CANCELLED.value:
-                            self._finalise_cancelled(session, job, stats, processed, total_rows)
+                            ImportService._finalise_cancelled(
+                                session, job, stats, processed, total_rows
+                            )
                             return {"status": "cancelled"}
                         job.processed_rows = processed
                         job.progress = int(100 * processed / max(1, total_rows))
                         job.created_rows = stats["created"]
                         job.updated_rows = stats["updated"]
                         job.failed_rows = stats["failed"]
+                        job.updated_at = utcnow()
                         session.commit()
 
             flush(chunk)
 
             session.refresh(job)
             if job.status == ImportStatus.CANCELLED.value:
-                self._finalise_cancelled(session, job, stats, processed, total_rows)
+                ImportService._finalise_cancelled(session, job, stats, processed, total_rows)
                 return {"status": "cancelled"}
             job.processed_rows = processed
             job.total_rows = total_rows

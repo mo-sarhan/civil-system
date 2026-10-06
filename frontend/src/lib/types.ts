@@ -267,3 +267,95 @@ export interface AuditSummary {
   latest: string | null;
   total: number;
 }
+
+/* --- imports ------------------------------------------------------------ */
+
+export type ImportStatus =
+  | "pending"
+  | "validating"
+  | "ready"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface ImportFieldDef {
+  key: string;
+  label: string;
+  required: boolean;
+  aliases?: string[];
+  available?: boolean;
+}
+
+export interface ImportError {
+  row: number;
+  field: string;
+  value: string | null;
+  message: string;
+  severity: string;
+}
+
+export interface ImportPreview {
+  job_id: number;
+  filename: string;
+  headers: string[];
+  rows: (string | null)[][];
+  total_rows: number;
+  suggested_mapping: Record<string, number>;
+  fields: ImportFieldDef[];
+  linking_modes: Record<string, string>;
+}
+
+export interface ImportJob {
+  id: number;
+  filename: string;
+  file_type: string;
+  status: string;
+  total_rows: number;
+  processed_rows: number;
+  success_rows: number;
+  failed_rows: number;
+  created_rows: number;
+  updated_rows: number;
+  progress: number;
+  linking_mode: string | null;
+  column_mapping: Record<string, number> | null;
+  message: string | null;
+  created_by: number;
+  created_at: string | null;
+  committed_at: string | null;
+  error_report?: ImportError[];
+  warnings?: unknown[];
+}
+
+export interface ImportValidationReport {
+  job_id: number;
+  status: string;
+  total_rows: number;
+  valid_rows: number;
+  invalid_rows: number;
+  errors_count: number;
+  warnings_count: number;
+  errors: ImportError[];
+  errors_truncated: boolean;
+  linking_mode: string;
+  can_commit: boolean;
+}
+
+export interface ImportFieldsResponse {
+  fields: ImportFieldDef[];
+  linking_modes: { key: string; label: string }[];
+  max_rows: number;
+  chunk_size: number;
+}
+
+export interface MappingTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  mapping: Record<string, number>;
+  linking_mode: string;
+  is_shared: boolean;
+  created_by: number;
+  created_at: string | null;
+}

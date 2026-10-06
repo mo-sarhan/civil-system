@@ -8,6 +8,9 @@ import PersonDetailPage from "./pages/PersonDetailPage";
 import FamilyTreePage from "./pages/FamilyTreePage";
 import DuplicatesPage from "./pages/DuplicatesPage";
 import MarriagesPage from "./pages/MarriagesPage";
+import ExportsPage from "./pages/ExportsPage";
+import UsersPage from "./pages/UsersPage";
+import AuditPage from "./pages/AuditPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 
 export default function App() {
@@ -29,9 +32,9 @@ export default function App() {
         <Route path="duplicates" element={<DuplicatesPage />} />
         <Route path="marriages" element={<MarriagesPage />} />
         <Route path="imports" element={<PlaceholderPage title="رفع ملفات" />} />
-        <Route path="exports" element={<PlaceholderPage title="التصدير" />} />
-        <Route path="users" element={<PlaceholderPage title="المستخدمون" />} />
-        <Route path="audit" element={<PlaceholderPage title="سجل التدقيق" />} />
+        <Route path="exports" element={<ExportsPage />} />
+        <Route path="users" element={<UsersPage />} />
+        <Route path="audit" element={<AuditPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

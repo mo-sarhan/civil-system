@@ -241,3 +241,29 @@ export interface CompareResult {
   name_similarity: number;
   recommendation: string;
 }
+
+/* --- users, audit, exports ---------------------------------------------- */
+
+export interface AuditEntry {
+  id: number;
+  user_id: number | null;
+  username: string | null;
+  action: string;
+  entity: string | null;
+  entity_id: number | null;
+  details: Record<string, unknown> | null;
+  ip: string | null;
+  created_at: string | null;
+}
+
+export interface AuditActions {
+  actions: string[];
+  entities: string[];
+}
+
+export interface AuditSummary {
+  by_action: { action: string; count: number }[];
+  top_users: { username: string; count: number }[];
+  latest: string | null;
+  total: number;
+}

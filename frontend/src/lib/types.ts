@@ -179,3 +179,65 @@ export interface FamilyTree {
   total_nodes: number;
   truncated: boolean;
 }
+
+/* --- marriages & duplicates ---------------------------------------------- */
+
+export type MarriageStatus = "married" | "divorced" | "widowed" | "separated";
+
+export interface Marriage {
+  id: number;
+  husband_id: number;
+  wife_id: number;
+  start_date: string | null;
+  end_date: string | null;
+  status: string;
+  notes: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  husband_name: string | null;
+  wife_name: string | null;
+}
+
+export interface DuplicatePerson {
+  id: number;
+  full_name: string;
+  national_id: string | null;
+  gender: "M" | "F" | null;
+  birth_date: string | null;
+  birth_place: string | null;
+  father_id: number | null;
+  mother_id: number | null;
+  reasons?: string[];
+  confidences?: number[];
+  children?: number;
+  spouses?: number;
+}
+
+export interface DuplicateGroup {
+  key: string;
+  reason: string;
+  confidence: number;
+  persons: DuplicatePerson[];
+}
+
+export interface DuplicatesResult {
+  groups: DuplicateGroup[];
+  total_groups: number;
+  threshold: number;
+}
+
+export interface CompareField {
+  field: string;
+  a: string | number | null;
+  b: string | number | null;
+  same: boolean;
+}
+
+export interface CompareResult {
+  a: DuplicatePerson;
+  b: DuplicatePerson;
+  fields: CompareField[];
+  differences: number;
+  name_similarity: number;
+  recommendation: string;
+}

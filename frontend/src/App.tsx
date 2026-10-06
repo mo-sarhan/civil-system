@@ -6,6 +6,8 @@ import DashboardPage from "./pages/DashboardPage";
 import PersonsPage from "./pages/PersonsPage";
 import PersonDetailPage from "./pages/PersonDetailPage";
 import FamilyTreePage from "./pages/FamilyTreePage";
+import DuplicatesPage from "./pages/DuplicatesPage";
+import MarriagesPage from "./pages/MarriagesPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 
 export default function App() {
@@ -24,8 +26,8 @@ export default function App() {
         <Route path="persons/:personId" element={<PersonDetailPage />} />
         <Route path="persons/:personId/tree" element={<FamilyTreePage />} />
         <Route path="tree" element={<FamilyTreePage />} />
-        <Route path="duplicates" element={<PlaceholderPage title="المكررات" />} />
-        <Route path="marriages" element={<PlaceholderPage title="الزيجات" />} />
+        <Route path="duplicates" element={<DuplicatesPage />} />
+        <Route path="marriages" element={<MarriagesPage />} />
         <Route path="imports" element={<PlaceholderPage title="رفع ملفات" />} />
         <Route path="exports" element={<PlaceholderPage title="التصدير" />} />
         <Route path="users" element={<PlaceholderPage title="المستخدمون" />} />

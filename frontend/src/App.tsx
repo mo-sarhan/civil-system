@@ -4,6 +4,8 @@ import RequireAuth from "./auth/RequireAuth";
 import AppShell from "./layout/AppShell";
 import DashboardPage from "./pages/DashboardPage";
 import PersonsPage from "./pages/PersonsPage";
+import PersonDetailPage from "./pages/PersonDetailPage";
+import FamilyTreePage from "./pages/FamilyTreePage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 
 export default function App() {
@@ -19,8 +21,9 @@ export default function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="persons" element={<PersonsPage />} />
-        <Route path="persons/:personId" element={<PlaceholderPage title="ملف الشخص" />} />
-        <Route path="tree" element={<PlaceholderPage title="شجرة العائلة" />} />
+        <Route path="persons/:personId" element={<PersonDetailPage />} />
+        <Route path="persons/:personId/tree" element={<FamilyTreePage />} />
+        <Route path="tree" element={<FamilyTreePage />} />
         <Route path="duplicates" element={<PlaceholderPage title="المكررات" />} />
         <Route path="marriages" element={<PlaceholderPage title="الزيجات" />} />
         <Route path="imports" element={<PlaceholderPage title="رفع ملفات" />} />

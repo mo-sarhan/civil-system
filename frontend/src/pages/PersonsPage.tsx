@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../auth/context";
 import { api, errorMessage } from "../lib/api";
 import type { Page, Person } from "../lib/types";
+import PersonForm from "../components/PersonForm";
 
 interface Filters {
   q: string;
@@ -23,6 +25,10 @@ function useDebounced<T>(value: T, delay = 350): T {
 }
 
 export default function PersonsPage() {
+  const { user } = useAuth();
+  const canWrite = user?.role === "editor" || user?.role === "admin";
+  const queryClient = useQueryClient();
+  const [creating, setCreating] = useState(false);
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const debouncedQuery = useDebounced(filters.q);
 
@@ -50,7 +56,29 @@ export default function PersonsPage() {
             {data ? `${data.total.toLocaleString("ar-EG")} سجل` : " "}
           </p>
         </div>
+        {canWrite && !creating && (
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+          >
+            إضافة شخص
+          </button>
+        )}
       </header>
+
+      {creating && (
+        <div className="mb-6">
+          <PersonForm
+            onCancel={() => setCreating(false)}
+            onSaved={async () => {
+              await queryClient.invalidateQueries({ queryKey: ["persons"] });
+              await queryClient.invalidateQueries({ queryKey: ["stats", "overview"] });
+              setCreating(false);
+            }}
+          />
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <input

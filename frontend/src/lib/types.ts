@@ -71,3 +71,111 @@ export const ROLE_LABELS: Record<Role, string> = {
   editor: "محرر",
   viewer: "قارئ",
 };
+
+/* --- family structure ---------------------------------------------------- */
+
+export interface ParentsResponse {
+  person_id: number;
+  father: Person | null;
+  mother: Person | null;
+}
+
+export interface ChildrenResponse {
+  person_id: number;
+  as_father: Person[];
+  as_mother: Person[];
+  total: number;
+}
+
+export interface SiblingsResponse {
+  person_id: number;
+  full: Person[];
+  half_paternal: Person[];
+  half_maternal: Person[];
+  total: number;
+}
+
+export interface SpouseEntry extends Person {
+  marriage_id?: number;
+  marriage_status?: string;
+  marriage_date?: string | null;
+}
+
+export interface SpousesResponse {
+  person_id: number;
+  spouses: SpouseEntry[];
+  total: number;
+}
+
+export interface Relative extends Person {
+  relation: string;
+  relation_code: string;
+  generation_diff: number;
+  path: number[];
+}
+
+export interface RelativesResponse {
+  person_id: number;
+  uncles_aunts: Relative[];
+  cousins: Relative[];
+  nephews_nieces: Relative[];
+  in_laws: Relative[];
+  grand_uncles: Relative[];
+  grand_aunts: Relative[];
+  summary: Record<string, number>;
+}
+
+export interface FamilySummary {
+  person_id: number;
+  children: number;
+  siblings: number;
+  spouses: number;
+  descendants: number;
+  ancestors: number;
+  marriages: number;
+}
+
+/** A node in `GET /persons/{id}/tree`. `depth` is negative for ancestors. */
+export interface TreeNode {
+  id: number;
+  full_name: string;
+  gender: "M" | "F" | null;
+  birth_date: string | null;
+  death_date: string | null;
+  birth_place: string | null;
+  father_id: number | null;
+  mother_id: number | null;
+  depth: number;
+  generation: string;
+  children: number[];
+  has_more_parents: boolean;
+  has_more_children: boolean;
+}
+
+export type TreeLinkKind = "parent" | "spouse";
+
+export interface TreeLink {
+  source: number;
+  target: number;
+  kind: TreeLinkKind;
+}
+
+export interface Marriage {
+  id: number;
+  husband_id: number;
+  wife_id: number;
+  start_date: string | null;
+  end_date: string | null;
+  status: string;
+}
+
+export interface FamilyTree {
+  person_id: number;
+  up: number;
+  down: number;
+  nodes: TreeNode[];
+  links: TreeLink[];
+  marriages: Marriage[];
+  total_nodes: number;
+  truncated: boolean;
+}

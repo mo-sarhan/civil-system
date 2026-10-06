@@ -270,9 +270,9 @@ def get_tree(
     request: Request,
     db: DbSession,
     user: ReaderUser,
-    up: Annotated[int, Query(ge=0, le=10)] = 3,
-    down: Annotated[int, Query(ge=0, le=10)] = 4,
-    max_nodes: Annotated[int, Query(ge=10, le=5000)] = 800,
+    up: Annotated[int, Query(ge=0, le=50)] = 50,
+    down: Annotated[int, Query(ge=0, le=50)] = 50,
+    max_nodes: Annotated[int, Query(ge=10, le=100000)] = 20000,
 ) -> TreeResponse:
     person = _get_person(db, person_id)
     data = RelationshipService(db).tree(person, up=up, down=down, max_nodes=max_nodes)

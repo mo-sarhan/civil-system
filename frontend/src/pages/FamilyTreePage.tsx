@@ -51,7 +51,9 @@ export default function FamilyTreePage() {
   const treeQuery = useQuery({
     queryKey: ["tree", targetId],
     queryFn: async () => {
-      const { data } = await api.get<FamilyTree>(`/persons/${targetId}/tree`);
+      const { data } = await api.get<FamilyTree>(
+        `/persons/${targetId}/tree?up=50&down=50&max_nodes=50000`,
+      );
       return data;
     },
     enabled: targetId > 0,

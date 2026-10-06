@@ -132,49 +132,6 @@ class RelationshipService:
         )
         return {row[0]: int(row[1]) for row in rows}
 
-    def _step_towards(
-        self,
-        person: Person,
-        distance_map: dict[int, int],
-        cache: dict[int, Person] | None = None,
-        target_id: int | None = None,
-    ) -> Person | None:
-        """Return the parent that moves one step closer to the target.
-
-        ``target_id`` disambiguates the last hop. When the target is exactly one
-        generation above ``person`` both parents can share the same distance in
-        ``distance_map`` (they lead to a common ancestor), and only one of them
-        actually links to the target.
-        """
-        if (
-            target_id is not None
-            and distance_map.get(target_id) == distance_map.get(person.id, 0) + 1
-        ):
-            for parent_id in (person.father_id, person.mother_id):
-                if parent_id == target_id:
-                    if cache is not None and parent_id in cache:
-                        return cache[parent_id]
-                    parent = self.db.get(Person, parent_id)
-                    if cache is not None and parent is not None:
-                        cache[parent_id] = parent
-                    return parent
-
-        candidates: list[tuple[int, int]] = []
-        if person.father_id and person.father_id in distance_map:
-            candidates.append((distance_map[person.father_id], person.father_id))
-        if person.mother_id and person.mother_id in distance_map:
-            candidates.append((distance_map[person.mother_id], person.mother_id))
-        if not candidates:
-            return None
-        candidates.sort()
-        parent_id = candidates[0][1]
-        if cache is not None and parent_id in cache:
-            return cache[parent_id]
-        parent = self.db.get(Person, parent_id)
-        if cache is not None and parent is not None:
-            cache[parent_id] = parent
-        return parent
-
     # ------------------------------------------------------------------ #
     # Direct relationships
     # ------------------------------------------------------------------ #
@@ -330,23 +287,56 @@ class RelationshipService:
     ) -> list[int]:
         """Ids from ``person`` up to ``target_id`` inclusive.
 
+        Depth-first walk over the recorded parents that sit one generation
+        closer to the target. Backtracking matters in real registries: a
+        spouse who married into the family has no recorded parents, so the
+        other parent's branch is the only route to the common ancestor.
+
         Falls back to ``[person.id]`` when the target is unreachable, which
         happens when the caller only supplied a truncated distance map.
         """
         if person.id == target_id:
             return [person.id]
         cache = cache if cache is not None else {}
-        path = [person.id]
-        current = person
-        for _ in range(MAX_DEPTH):
-            if current.id == target_id:
-                return path
-            nxt = self._step_towards(current, distance_map, cache, target_id)
-            if nxt is None or nxt.id == current.id:
-                break
-            path.append(nxt.id)
-            current = nxt
-        return path if path[-1] == target_id else [person.id]
+        # Cap the walk so corrupt data can never loop forever below the ladder.
+        target_depth = distance_map.get(target_id)
+        if target_depth is None or target_depth > MAX_DEPTH:
+            return [person.id]
+
+        def load(pid: int) -> Person | None:
+            if pid in cache:
+                return cache[pid]
+            if pid == person.id:
+                cache[person.id] = person
+                return person
+            row = self.db.get(Person, pid)
+            cache[pid] = row
+            return row
+
+        def dfs(pid: int, seen: frozenset[int]) -> list[int] | None:
+            if pid == target_id:
+                return [pid]
+            row = load(pid)
+            if row is None:
+                return None
+            current_depth = distance_map.get(pid, 0)
+            # The map is anchored either at the walker (ancestors get larger
+            # distances) or at the elder (the walker's own distance is positive).
+            # Walk parents towards the target either way.
+            step = 1 if target_depth >= current_depth else -1
+            expected = current_depth + step
+            for parent_id in (row.father_id, row.mother_id):
+                if parent_id is None or parent_id in seen:
+                    continue
+                if distance_map.get(parent_id) != expected:
+                    continue
+                rest = dfs(parent_id, seen | {parent_id})
+                if rest is not None:
+                    return [pid] + rest
+            return None
+
+        routed = dfs(person.id, frozenset({person.id}))
+        return routed if routed is not None else [person.id]
 
     def _path_down(
         self,
@@ -902,6 +892,27 @@ class RelationshipService:
             return labels.GRANDPARENT_M if gender == "M" else labels.GRANDPARENT_F
         return labels.GREAT_GRANDPARENT_M if gender == "M" else labels.GREAT_GRANDPARENT_F
 
+    def _blood_path(
+        self,
+        person_a: Person,
+        person_b: Person,
+        lca_id: int,
+        map_a: dict[int, int],
+        map_b: dict[int, int],
+    ) -> list[int]:
+        """The real, edge-traversable chain between two blood relatives.
+
+        Unlike the branch summaries used for labels, this is the literal path
+        the family tree can draw: every adjacent pair is a recorded parent/child
+        link. ``map_a``/``map_b`` are ancestor distance maps measured from each
+        person, so walking each person up to the common ancestor yields the two
+        halves that meet at the LCA.
+        """
+        up_a = self._path_up(person_a, lca_id, map_a)
+        up_b = self._path_up(person_b, lca_id, map_b)
+        merged = up_a + list(reversed(up_b))[1:]
+        return merged or [person_a.id]
+
     def _collateral(
         self,
         a_id: int,
@@ -934,14 +945,14 @@ class RelationshipService:
             else:
                 code = labels.HALF_BROTHER if person_b.gender == "M" else labels.HALF_SISTER
                 relation = labels.ARABIC_LABELS[code]
-            path = [a_id, lca_id, b_id]
+            blood_path = self._blood_path(person_a, person_b, lca_id, map_a, map_b)
             return RelationshipResult(
                 relation=relation,
                 code=code,
                 generations=0,
                 common_ancestor=lca,
-                path=path,
-                distance=2,
+                path=blood_path,
+                distance=len(blood_path) - 1,
                 relation_from_a="أخوة",
                 relation_from_b=relation,
                 explanation=f"{person_a.full_name} و {person_b.full_name} إخوة",
@@ -959,15 +970,15 @@ class RelationshipService:
                 code = labels.uncle_code(degree, paternal=paternal, gender=person_a.gender)
                 relation = labels.ARABIC_LABELS[code]
                 nephew = labels.nephew_code(degree, paternal=paternal, gender=person_b.gender)
-                path = [a_id, lca_id]
                 generations = -max(map_a[lca_id] - 1, 1)
+                blood_path = self._blood_path(person_a, person_b, lca_id, map_a, map_b)
                 return RelationshipResult(
                     relation=relation,
                     code=code,
                     generations=generations,
                     common_ancestor=lca,
-                    path=path + self._path_down_from(lca_id, b_id, map_b),
-                    distance=max(map_a[lca_id] - 1, 1) + map_b[lca_id],
+                    path=blood_path,
+                    distance=len(blood_path) - 1,
                     relation_from_a=relation,
                     relation_from_b=labels.ARABIC_LABELS[nephew],
                     explanation=f"{person_a.full_name} {relation} {person_b.full_name}",
@@ -977,13 +988,15 @@ class RelationshipService:
             code = labels.uncle_code(degree, paternal=paternal, gender=person_b.gender)
             relation = labels.ARABIC_LABELS[code]
             nephew = labels.nephew_code(degree, paternal=paternal, gender=person_a.gender)
+            generations = max(map_b[lca_id] - 1, 1)
+            blood_path = self._blood_path(person_a, person_b, lca_id, map_a, map_b)
             return RelationshipResult(
                 relation=relation,
                 code=code,
-                generations=max(map_b[lca_id] - 1, 1),
+                generations=generations,
                 common_ancestor=lca,
-                path=[*self._path_up(person_a, lca_id, map_a), b_id],
-                distance=max(map_b[lca_id] - 1, 1) + map_a[lca_id],
+                path=blood_path,
+                distance=len(blood_path) - 1,
                 relation_from_a=labels.ARABIC_LABELS[nephew],
                 relation_from_b=relation,
                 explanation=f"{person_b.full_name} {relation} {person_a.full_name}",
@@ -1004,13 +1017,14 @@ class RelationshipService:
         elif degree >= 3:
             relation = f"{relation} من الدرجة {degree}"
 
+        blood_path = self._blood_path(person_a, person_b, lca_id, map_a, map_b)
         return RelationshipResult(
             relation=relation,
             code=base,
             generations=0,
             common_ancestor=lca,
-            path=[a_id, lca_id, b_id],
-            distance=e_a + e_b + 2,
+            path=blood_path,
+            distance=len(blood_path) - 1,
             relation_from_a=relation,
             relation_from_b=relation,
             explanation=f"{person_a.full_name} {relation} {person_b.full_name}",
@@ -1055,13 +1069,6 @@ class RelationshipService:
             frontier = following
             seen.update(node.id for node in frontier)
         return True
-
-    def _path_down_from(
-        self, ancestor_id: int, target_id: int, distance_map: dict[int, int]
-    ) -> list[int]:
-        """Ids from ``ancestor_id`` (exclusive) down to ``target_id``."""
-        reverse = self._path_up(self._require(target_id), ancestor_id, distance_map)
-        return list(reversed(reverse))
 
     def _marital_relation(
         self, a_id: int, b_id: int, person_a: Person, person_b: Person

@@ -17,6 +17,7 @@ const NAV: { section: string; items: NavItem[] }[] = [
       { to: "/duplicates", label: "المكررات" },
       { to: "/marriages", label: "الزيجات" },
       { to: "/tree", label: "شجرة العائلة" },
+      { to: "/relationships", label: "صلة القرابة" },
     ],
   },
   {

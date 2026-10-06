@@ -135,6 +135,34 @@ export interface FamilySummary {
   marriages: number;
 }
 
+/* --- relationship finder -------------------------------------------------- */
+
+export interface RelationshipPathStep {
+  person_id: number;
+  full_name: string;
+  gender: "M" | "F" | null;
+  role: string;
+  /** How the NEXT step relates to this one (أب / أم / ابن / ابنة / زوج / زوجة). */
+  relation_to_next: string | null;
+}
+
+/** `GET /relationship?a=..&b=..`: kinship between two people + a real path. */
+export interface RelationshipResult {
+  a: number;
+  b: number;
+  relation: string | null;
+  relation_code: string | null;
+  generations: number | null;
+  common_ancestor_id: number | null;
+  common_ancestor_name: string | null;
+  path: RelationshipPathStep[];
+  /** Number of hops (السُّلف المُشترك) = degree of consanguinity. */
+  distance: number;
+  relation_from_a: string | null;
+  relation_from_b: string | null;
+  explanation: string | null;
+}
+
 /** A node in `GET /persons/{id}/tree`. `depth` is negative for ancestors. */
 export interface TreeNode {
   id: number;

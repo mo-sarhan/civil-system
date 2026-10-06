@@ -36,6 +36,7 @@ from app.schemas.relationship import (
 from app.services import audit_service
 from app.services.person_service import PersonService
 from app.services.relationship_service import RelationshipService
+from app.utils import relations_labels as _labels
 
 router = APIRouter(tags=["العلاقات"])
 
@@ -349,7 +350,29 @@ def find_relationship(
     if result.common_ancestor:
         persons.add(result.common_ancestor.id)
     rows = db.execute(select(Person).where(Person.id.in_(persons))).scalars().all()
-    names = {p.id: p.full_name for p in rows}
+    people = {p.id: p for p in rows}
+
+    def _person(pid: int) -> Person | None:
+        return people.get(pid)
+
+    def _step_link(u_id: int, v_id: int) -> str | None:
+        """How ``v`` is related to ``u``: parent, child, spouse or unknown."""
+        u, v = _person(u_id), _person(v_id)
+        if u is None or v is None:
+            return None
+        if v.father_id == u_id or v.mother_id == u_id:
+            return _labels.lineal_descendant_label(1, v.gender)
+        if u.father_id == v_id or u.mother_id == v_id:
+            return _labels.lineal_ancestor_label(1, v.gender)
+        linked = db.execute(
+            select(Marriage).where(
+                ((Marriage.husband_id == u_id) & (Marriage.wife_id == v_id))
+                | ((Marriage.husband_id == v_id) & (Marriage.wife_id == u_id))
+            )
+        ).scalars().first()
+        if linked is not None:
+            return "الزوجة" if v.gender == "F" else "الزوج"
+        return None
 
     # A self-comparison has a single-element path, so never overwrite a role
     # with ``None`` for the same person id.
@@ -364,10 +387,14 @@ def find_relationship(
     steps = [
         RelationshipPathStep(
             person_id=pid,
-            full_name=names.get(pid, str(pid)),
+            full_name=_person(pid).full_name if _person(pid) else str(pid),
+            gender=_person(pid).gender if _person(pid) else None,
             role=roles.get(pid, "قريب"),
+            relation_to_next=(
+                _step_link(pid, result.path[i + 1]) if i + 1 < len(result.path) else None
+            ),
         )
-        for pid in result.path
+        for i, pid in enumerate(result.path)
     ]
 
     return RelationshipResponse(

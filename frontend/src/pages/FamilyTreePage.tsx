@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { select, zoom, zoomIdentity, zoomTransform, type ZoomBehavior } from "d3";
 import { api, errorMessage } from "../lib/api";
@@ -11,10 +11,29 @@ const PAD = 24;
 const CHIP_H = 64;
 const CHIP_RADIUS = 12;
 
+const PATH_COLORS = {
+  start: "#059669",
+  end: "#dc2626",
+  mid: "#d97706",
+};
+const PATH_EDGE_COLOR = "#f59e0b";
+
 export default function FamilyTreePage() {
   const { personId } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const fromParam = personId ? Number(personId) : Number(searchParams.get("person_id") ?? 0);
+
+  const pathIds = useMemo(
+    () =>
+      (searchParams.get("path") ?? "")
+        .split(",")
+        .map((s) => Number(s))
+        .filter((n) => Number.isInteger(n) && n > 0),
+    [searchParams],
+  );
+  const pathRelation = searchParams.get("rel");
+  const pathDegree = searchParams.get("deg") ? Number(searchParams.get("deg")) : null;
+  const isPathOn = pathIds.length >= 2;
 
   // When the route has no id, default to the first person so /tree is usable
   // straight from the sidebar.
@@ -43,6 +62,41 @@ export default function FamilyTreePage() {
     selectedId != null ? (treeQuery.data?.nodes.find((n) => n.id === selectedId) ?? null) : null;
 
   const layout = treeQuery.data ? layoutTree(treeQuery.data) : null;
+
+  const { posById, pathRole, pathPairs, pathVisible } = useMemo(() => {
+    const pos = new Map<number, { col: number; row: number }>();
+    const parentSet = new Set<string>();
+    const spouseSet = new Set<string>();
+    if (layout) {
+      for (const row of layout.rows) {
+        for (const n of row) pos.set(n.person.id, { col: n.col, row: n.row });
+      }
+      for (const [p, c] of layout.parentEdges) parentSet.add(`${p},${c}`);
+      for (const [a, b] of layout.spousePairs) spouseSet.add(`${a},${b}`);
+    }
+    const role = new Map<number, "start" | "end" | "mid">();
+    pathIds.forEach((id, i) => {
+      if (i === 0) role.set(id, "start");
+      else if (i === pathIds.length - 1) role.set(id, "end");
+      else role.set(id, "mid");
+    });
+    const pairs: { u: number; v: number; kind: "parent" | "spouse" }[] = [];
+    for (let i = 0; i + 1 < pathIds.length; i++) {
+      const u = pathIds[i];
+      const v = pathIds[i + 1];
+      if (parentSet.has(`${u},${v}`) || parentSet.has(`${v},${u}`)) {
+        pairs.push({ u, v, kind: "parent" });
+      } else if (spouseSet.has(`${u},${v}`) || spouseSet.has(`${v},${u}`)) {
+        pairs.push({ u, v, kind: "spouse" });
+      }
+    }
+    return {
+      posById: pos,
+      pathRole: role,
+      pathPairs: pairs,
+      pathVisible: pathIds.filter((id) => pos.has(id)),
+    };
+  }, [layout, pathIds]);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -92,6 +146,50 @@ export default function FamilyTreePage() {
     },
     [applyTransform],
   );
+
+  // Frame the highlighted path so it fills most of the viewport.
+  const framePath = useCallback(() => {
+    if (!layout || pathIds.length === 0) return;
+    const pts: { x: number; y: number }[] = [];
+    for (const row of layout.rows) {
+      for (const n of row) {
+        if (pathIds.includes(n.person.id)) {
+          pts.push({ x: colX(n.col), y: rowY(n.row) });
+        }
+      }
+    }
+    if (pts.length < 2) return;
+    const containerW = wrapRef.current?.clientWidth ?? 800;
+    const containerH = wrapRef.current?.clientHeight ?? 600;
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const p of pts) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x + COL_W);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y + CHIP_H);
+    }
+    const pad = 56;
+    const k = Math.max(
+      0.25,
+      Math.min(1, containerW / (maxX - minX + pad * 2), containerH / (maxY - minY + pad * 2)),
+    );
+    const x = (containerW - (maxX - minX) * k) / 2 - minX * k;
+    const y = (containerH - (maxY - minY) * k) / 2 - minY * k;
+    applyTransform({ x, y, k });
+  }, [layout, pathIds, applyTransform]);
+
+  const clearPath = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("path");
+      next.delete("rel");
+      next.delete("deg");
+      return next;
+    });
+  }, [setSearchParams]);
 
   // Centre the tree when new data arrives.
   useEffect(() => {
@@ -166,6 +264,46 @@ export default function FamilyTreePage() {
         </div>
       </header>
 
+      {isPathOn && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm"
+          dir="rtl"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-semibold text-amber-800">مسار مُوضَّح على الشجرة</span>
+            {pathRelation && <span className="text-sm text-amber-700">{pathRelation}</span>}
+            {pathDegree !== null && (
+              <span className="rounded bg-white px-2 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                درجة القرابة: {pathDegree}
+              </span>
+            )}
+            {pathVisible.length < pathIds.length && (
+              <span className="text-xs text-amber-600">
+                ظاهر: {pathVisible.length}/{pathIds.length}
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2">
+            {pathVisible.length >= 2 && (
+              <button
+                type="button"
+                onClick={framePath}
+                className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                توسيط المسار
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={clearPath}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+            >
+              مسح التظليل
+            </button>
+          </div>
+        </div>
+      )}
+
       {hovered && hovered.id !== (subject?.id ?? targetId) && (
         <MiniCard node={hovered} />
       )}
@@ -213,6 +351,47 @@ export default function FamilyTreePage() {
               })}
             </g>
 
+            {pathPairs.length > 0 && (
+              <g>
+                {pathPairs.map(({ u, v, kind }) => {
+                  const A = posById.get(u);
+                  const B = posById.get(v);
+                  if (!A || !B) return null;
+                  if (kind === "spouse") {
+                    const y = rowY(A.row) + CHIP_H + 10;
+                    const x1 = colX(A.col) + COL_W / 2;
+                    const x2 = colX(B.col) + COL_W / 2;
+                    return (
+                      <path
+                        key={`pth-${u}-${v}`}
+                        d={`M${x1},${y} L${x2},${y}`}
+                        stroke={PATH_EDGE_COLOR}
+                        strokeWidth="5"
+                        strokeLinecap="round"
+                      />
+                    );
+                  }
+                  const P = A.row <= B.row ? A : B;
+                  const C = A.row <= B.row ? B : A;
+                  const x1 = colX(P.col) + COL_W / 2;
+                  const y1 = rowY(P.row) + CHIP_H;
+                  const x2 = colX(C.col) + COL_W / 2;
+                  const y2 = rowY(C.row);
+                  const midY = (y1 + y2) / 2;
+                  return (
+                    <path
+                      key={`pth-${u}-${v}`}
+                      d={`M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`}
+                      fill="none"
+                      stroke={PATH_EDGE_COLOR}
+                      strokeWidth="5"
+                      strokeLinecap="round"
+                    />
+                  );
+                })}
+              </g>
+            )}
+
             <g>
               {layout.rows.map((row) => (
                 <g key={row[0].row}>
@@ -224,6 +403,7 @@ export default function FamilyTreePage() {
                       y={rowY(row[0].row)}
                       isSubject={person.id === (subject?.id ?? targetId)}
                       highlighted={person.id === hoverId}
+                      pathRole={pathRole.get(person.id)}
                       onHover={setHoverId}
                       onClick={() => toggleSubject(person.id)}
                       link={({ children }) => (
@@ -245,6 +425,29 @@ export default function FamilyTreePage() {
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-white/90 px-3 py-1.5 text-xs text-slate-500 shadow-sm ring-1 ring-slate-200" dir="rtl">
           اسحب للتحريك · عجلة الفأرة للتكبير أو الأزرار +/− · انقر على شخص لتوسيط الشجرة عليه
         </div>
+        {isPathOn && (
+          <div
+            className="pointer-events-none absolute bottom-3 right-3 flex flex-wrap items-center gap-3 rounded-lg bg-white/90 px-3 py-1.5 text-[11px] text-slate-600 shadow-sm ring-1 ring-slate-200"
+            dir="rtl"
+          >
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: PATH_COLORS.start }} />
+              بداية المسار
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: PATH_COLORS.mid }} />
+              منتصف المسار
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: PATH_COLORS.end }} />
+              نهاية المسار
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="h-1 w-4 rounded" style={{ background: PATH_EDGE_COLOR }} />
+              رابطة المسار
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -261,6 +464,7 @@ function Chip({
   y,
   isSubject,
   highlighted,
+  pathRole,
   onHover,
   onClick,
   link,
@@ -270,6 +474,7 @@ function Chip({
   y: number;
   isSubject: boolean;
   highlighted: boolean;
+  pathRole?: "start" | "end" | "mid";
   onHover: (id: number) => void;
   onClick: () => void;
   link: (props: { children: React.ReactNode }) => React.ReactNode;
@@ -280,6 +485,10 @@ function Chip({
   const stroke = female ? "#ec4899" : "#3b82f6";
   const deceasedFill = "#f1f5f9";
   const deceasedStroke = "#94a3b8";
+
+  const pathColor = pathRole ? PATH_COLORS[pathRole] : null;
+  const chipStroke = pathColor ?? (alive ? stroke : deceasedStroke);
+  const chipStrokeWidth = pathColor ? 3.5 : isSubject ? 3 : 1.5;
 
   return (
     <g
@@ -306,11 +515,24 @@ function Chip({
         height={CHIP_H}
         rx={CHIP_RADIUS}
         fill={alive ? fill : deceasedFill}
-        stroke={alive ? stroke : deceasedStroke}
-        strokeWidth={isSubject ? 3 : 1.5}
+        stroke={chipStroke}
+        strokeWidth={chipStrokeWidth}
         className="transition-opacity"
         opacity={highlighted ? 0.55 : 1}
       />
+      {pathColor && (
+        <rect
+          x={-4}
+          y={-4}
+          width={COL_W + 8}
+          height={CHIP_H + 8}
+          rx={CHIP_RADIUS + 3}
+          fill="none"
+          stroke={pathColor}
+          strokeWidth={2}
+          strokeDasharray="5 4"
+        />
+      )}
       <foreignObject x={6} y={8} width={COL_W - 12} height={30}>
         <div
           dir="rtl"

@@ -12,6 +12,7 @@ import ExportsPage from "./pages/ExportsPage";
 import UsersPage from "./pages/UsersPage";
 import AuditPage from "./pages/AuditPage";
 import ImportsPage from "./pages/ImportsPage";
+import RelationshipsPage from "./pages/RelationshipsPage";
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="tree" element={<FamilyTreePage />} />
         <Route path="duplicates" element={<DuplicatesPage />} />
         <Route path="marriages" element={<MarriagesPage />} />
+        <Route path="relationships" element={<RelationshipsPage />} />
         <Route path="imports" element={<ImportsPage />} />
         <Route path="exports" element={<ExportsPage />} />
         <Route path="users" element={<UsersPage />} />

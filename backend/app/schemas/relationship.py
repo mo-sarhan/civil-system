@@ -155,6 +155,7 @@ class RelationshipPathStep(BaseModel):
 
     person_id: int
     full_name: str
+    gender: str | None = Field(default=None, description="النوع: M أو F")
     role: str = Field(..., description="دور الشخص في المسار")
     relation_to_next: str | None = Field(default=None, description="نوع العلاقة مع الخطوة التالية")
 

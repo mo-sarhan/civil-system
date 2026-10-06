@@ -79,6 +79,7 @@ services:
       IMPORT_MAX_ROWS: ${IMPORT_MAX_ROWS:-2000000}
       IMPORT_CHUNK_SIZE: ${IMPORT_CHUNK_SIZE:-5000}
       IMPORT_WORKER_THREADS: ${IMPORT_WORKER_THREADS:-2}
+      IMPORT_STALE_MINUTES: ${IMPORT_STALE_MINUTES:-0}
       IMPORT_STORAGE_DIR: /data/uploads
       # The container applies `alembic upgrade head` before serving.
       AUTO_MIGRATE: ${AUTO_MIGRATE:-true}
@@ -88,6 +89,16 @@ services:
       - uploads:/data/uploads
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "${FRONTEND_PORT:-8090}:80"
 
 volumes:
   pgdata:

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="السجل المدني">
+  <rect width="32" height="32" rx="7" fill="#0f172a"/>
+  <g stroke="#e2e8f0" stroke-width="1.6" fill="none" stroke-linecap="round">
+    <path d="M16 8v6M16 14l-6 5M16 14l6 5M10 19v3M22 19v3"/>
+  </g>
+  <g fill="#e2e8f0">
+    <circle cx="16" cy="6" r="2.6"/>
+    <circle cx="10" cy="24" r="2.4"/>
+    <circle cx="22" cy="24" r="2.4"/>
+  </g>
+</svg>

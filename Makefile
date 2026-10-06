@@ -9,6 +9,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 BACKEND  := backend
+FRONTEND := frontend
 COMPOSE  := docker compose
 PY       := $(BACKEND)/.venv/bin/python
 PIP      := $(BACKEND)/.venv/bin/pip
@@ -65,11 +66,33 @@ test-cov: ## run the backend test suite with a coverage report
 
 .PHONY: lint
 lint: ## ruff + black in check mode
-	cd $(BACKEND) && .venv/bin/ruff check app tests scripts && .venv/bin/black --check app tests scripts
+	cd $(BACKEND) && .venv/bin/ruff check app tests scripts alembic && .venv/bin/black --check app tests scripts alembic
 
 .PHONY: format
 format: ## apply ruff fixes and black formatting
-	cd $(BACKEND) && .venv/bin/ruff check app tests scripts --fix && .venv/bin/black app tests scripts
+	cd $(BACKEND) && .venv/bin/ruff check app tests scripts alembic --fix && .venv/bin/black app tests scripts alembic
+
+# ---------------------------------------------------------------------------
+# Frontend
+# ---------------------------------------------------------------------------
+.PHONY: install-fe
+install-fe: ## install the frontend dependencies
+	cd $(FRONTEND) && npm install
+
+.PHONY: dev-fe
+dev-fe: ## run the Vite dev server (proxies /api to the local API)
+	cd $(FRONTEND) && npm run dev
+
+.PHONY: lint-fe
+lint-fe: ## lint the frontend
+	cd $(FRONTEND) && npm run lint
+
+.PHONY: build-fe
+build-fe: ## typecheck and build the frontend bundle
+	cd $(FRONTEND) && npm run build
+
+.PHONY: check-fe
+check-fe: lint-fe build-fe ## frontend lint + typecheck + build
 
 .PHONY: check
 check: lint test ## lint and test
@@ -84,6 +107,7 @@ build: ## build the container images
 .PHONY: up
 up: ## start the full stack in the background
 	$(COMPOSE) up -d --build
+	@echo "UI:       http://localhost:$${FRONTEND_PORT:-8090}"
 	@echo "API docs: http://localhost:$${BACKEND_PORT:-8000}/docs"
 
 .PHONY: down

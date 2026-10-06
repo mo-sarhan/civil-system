@@ -71,15 +71,44 @@ jobs:
       - name: coverage floor
         run: coverage report --fail-under=80
 
-  image:
-    name: backend image
+  frontend:
+    name: frontend (lint + build)
     runs-on: ubuntu-latest
-    needs: backend
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
-      - name: build the image
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install dependencies
+        run: npm ci
+
+      - name: lint (oxlint)
+        run: npm run lint
+
+      - name: typecheck + build
+        run: npm run build
+
+  image:
+    name: container images
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build the backend image
         run: docker build -f backend/Dockerfile -t civil-backend:ci .
+
       - name: smoke test the entrypoint
         run: |
           docker run --rm --entrypoint python civil-backend:ci \
             -c "from app.main import app; print('routes:', len(app.routes))"
+
+      - name: build the frontend image
+        run: docker build -t civil-frontend:ci frontend/

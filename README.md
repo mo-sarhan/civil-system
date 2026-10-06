@@ -41,7 +41,7 @@ imports/exports and a complete audit trail.
 
 - **الخلفية | Backend:** Python 3.12، FastAPI، SQLAlchemy 2، Alembic، Pydantic v2، PostgreSQL 16.
 - **الأدوات | Tooling:** pytest، ruff، black، Docker Compose، Make، GitHub Actions.
-- **الواجهة | Frontend:** React + TypeScript + Vite + Tailwind + TanStack Query + D3 (قيد الإنشاء — لم تبدأ بعد).
+- **الواجهة | Frontend:** React 19 + TypeScript + Vite + Tailwind 4 + TanStack Query + react-router (RTL، خط Cairo محلي). D3 لم يُعتمد بعد.
 
 ## التشغيل السريع | Quick start
 
@@ -49,9 +49,10 @@ imports/exports and a complete audit trail.
 
 ```bash
 cp .env.example .env      # or: make env  (generates a random SECRET_KEY)
-make up                   # builds and starts PostgreSQL + the API
+make up                   # builds and starts PostgreSQL + API + UI
 make seed-docker          # loads sample_civil_registry.sql and creates the admin
-open http://localhost:8000/docs
+open http://localhost:8090        # the Arabic RTL interface
+open http://localhost:8000/docs   # the API reference
 ```
 
 > كلمة مرور المدير تُطبع مرة واحدة فقط أثناء `seed` — احتفظ بها، ويجب
@@ -61,9 +62,10 @@ With Docker Compose:
 
 ```bash
 cp .env.example .env      # or: make env  (generates a random SECRET_KEY)
-make up                   # builds and starts PostgreSQL + the API
+make up                   # builds and starts PostgreSQL + API + UI
 make seed-docker          # loads sample_civil_registry.sql and creates the admin
-open http://localhost:8000/docs
+open http://localhost:8090        # the Arabic RTL interface
+open http://localhost:8000/docs   # the API reference
 ```
 
 > The bootstrap admin password is printed once during `seed`; change it at the
@@ -81,6 +83,8 @@ make test-db              # create civil_registry_test
 make migrate              # alembic upgrade head
 make seed                 # sample data + bootstrap admin
 make dev                  # uvicorn --reload on :8000
+make install-fe           # npm install for the UI
+make dev-fe               # Vite on :5173, proxying /api to the local API
 ```
 
 خارج Docker، انسخ `backend/.env.local.example` إلى `backend/.env.local` وعدّل
@@ -100,6 +104,8 @@ make dev                  # uvicorn --reload on :8000
 | `make test` / `make test-cov` | تشغيل الاختبارات / مع تقرير التغطية |
 | `make lint` / `make format` | ruff + black |
 | `make check` | lint + test |
+| `make lint-fe` / `make build-fe` | oxlint + (tsc & vite build) للواجهة |
+| `make check-fe` | lint + build للواجهة |
 | `make shell` / `make psql` | صدفة SQL داخل الحاوية / على قاعدة التطوير |
 | `make secret` | توليد `SECRET_KEY` قوي |
 | `make clean` | إيقاف الحاويات وحذف الأحجام |
@@ -132,8 +138,8 @@ make dev                  # uvicorn --reload on :8000
 ## الاختبارات | Tests
 
 ```bash
-make test         # 212 tests against a real PostgreSQL (civil_registry_test)
-make test-cov     # same suite with a branch-coverage report (81.1%)
+make test         # 216 tests against a real PostgreSQL (civil_registry_test)
+make test-cov     # same suite with a branch-coverage report (81.2%)
 ```
 
 الاختبارات تشغّل ترحيلات Alembic مرة واحدة لكل جلسة ثم تمسح الجداول قبل كل
@@ -145,11 +151,11 @@ make test-cov     # same suite with a branch-coverage report (81.1%)
 ```
 .
 ├── backend/            FastAPI app (app/api, app/services, app/models), migrations, tests
-├── frontend/           React + TypeScript UI (not started yet)
+├── frontend/           React + TypeScript UI (src/auth, src/layout, src/pages, nginx image)
 ├── scripts/db-init/    PostgreSQL init SQL for Compose
 ├── docs/               architecture, API notes, decisions
 ├── sample_civil_registry.sql   14 people / 5 marriages sample data
-├── docker-compose.yml  db + backend (+ frontend later)
+├── docker-compose.yml  db + backend + frontend
 ├── Makefile            every workflow command
 └── .env.example        all settings, no secrets
 ```
@@ -159,6 +165,7 @@ make test-cov     # same suite with a branch-coverage report (81.1%)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — الطبقات، نموذج البيانات، محرّك القرابة.
 - [docs/API.md](docs/API.md) — ملخص الاستجابات والعقود المهمة.
 - [docs/DECISIONS.md](docs/DECISIONS.md) — القرارات الهندسية والقرارات غير الواضحة.
+- `http://localhost:8090` — الواجهة العربية (RTL) عبر nginx.
 - `http://localhost:8000/docs` — مرجع OpenAPI التفاعلي.
 
 ---

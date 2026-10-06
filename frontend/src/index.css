@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/* Cairo is self-hosted through @fontsource so the app renders correctly on an
+   intranet with no access to a font CDN. */
+@import "@fontsource/cairo/400.css";
+@import "@fontsource/cairo/500.css";
+@import "@fontsource/cairo/600.css";
+@import "@fontsource/cairo/700.css";
+
+@theme {
+  --font-sans: "Cairo", "Segoe UI", Tahoma, Arial, sans-serif;
+}
+
+html {
+  /* RTL is set in index.html; this keeps numeric tables and inputs LTR. */
+  font-family: var(--font-sans);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--color-slate-50);
+  color: var(--color-slate-800);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* National IDs, dates and file names must read left-to-right even inside an
+   RTL document, otherwise digits interleave with surrounding Arabic. */
+.ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Shared form control so every page's inputs match. */
+.field-input {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-slate-300);
+  background: #fff;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9375rem;
+  color: var(--color-slate-900);
+  outline: none;
+}
+.field-input:focus {
+  border-color: var(--color-slate-900);
+  box-shadow: 0 0 0 3px rgb(15 23 42 / 0.12);
+}

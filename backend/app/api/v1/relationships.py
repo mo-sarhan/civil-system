@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.api.deps import DbSession, ReaderUser, get_client_ip
@@ -290,10 +290,45 @@ def get_tree(
 
 
 @router.get(
+    "/forest",
+    summary="كل بيانات الشجرة لرسمها كخريطة واحدة",
+    description="جميع الأشخاص والزيجات لرسمها كخريطة واحدة (بلا تخطيط مسبق، يعالجه المتصفح).",
+)
+def get_forest(
+    request: Request,
+    db: DbSession,
+    user: ReaderUser,
+) -> dict[str, Any]:
+    _log(db, user, request, 0, "forest")
+    rows = db.execute(
+        text(
+            """
+            SELECT id, full_name, gender, birth_date, death_date,
+                   father_id, mother_id
+            FROM person
+            WHERE merged_into_id IS NULL
+            ORDER BY id
+            """
+        )
+    ).all()
+    nodes = [
+        [r.id, r.full_name, r.gender, r.birth_date, r.death_date, r.father_id, r.mother_id]
+        for r in rows
+    ]
+    kept: set[int] = {r.id for r in rows}
+    marriages = [
+        [m.husband_id, m.wife_id]
+        for m in db.execute(text("SELECT husband_id, wife_id FROM marriage")).all()
+        if m.husband_id in kept and m.wife_id in kept
+    ]
+    return {"total": len(nodes), "nodes": nodes, "marriages": marriages}
+
+
+@router.get(
     "/persons/{person_id}/relatives",
     response_model=RelativesResponse,
     summary="الأقارب",
-    description="الأخوات والعمات، الأبناء من الإخوة، أبناء العم، والصلات بالزواج.",
+    description="قائمة الأقارب حسب درجة القرابة من الأب/الأم/الزواج.",
 )
 def get_relatives(
     person_id: int,

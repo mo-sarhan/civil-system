@@ -13,6 +13,7 @@ import UsersPage from "./pages/UsersPage";
 import AuditPage from "./pages/AuditPage";
 import ImportsPage from "./pages/ImportsPage";
 import RelationshipsPage from "./pages/RelationshipsPage";
+import FullTreePage from "./pages/FullTreePage";
 
 export default function App() {
   return (
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="persons" element={<PersonsPage />} />
         <Route path="persons/:personId" element={<PersonDetailPage />} />
         <Route path="persons/:personId/tree" element={<FamilyTreePage />} />
+        <Route path="tree/full" element={<FullTreePage />} />
         <Route path="tree" element={<FamilyTreePage />} />
         <Route path="duplicates" element={<DuplicatesPage />} />
         <Route path="marriages" element={<MarriagesPage />} />

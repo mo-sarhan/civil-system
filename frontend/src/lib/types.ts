@@ -135,6 +135,36 @@ export interface FamilySummary {
   marriages: number;
 }
 
+/* --- whole-dataset map ("الشجرة الكاملة") --------------------------------- */
+
+/** Compact row from `GET /forest`. */
+export type ForestNode = [
+  id: number,
+  full_name: string,
+  gender: "M" | "F" | null,
+  birth_date: string | null,
+  death_date: string | null,
+  father_id: number | null,
+  mother_id: number | null,
+];
+
+/** `GET /forest`: everything in the DB, ready for a client layout. */
+export interface Forest {
+  total: number;
+  nodes: ForestNode[];
+  marriages: [husband_id: number, wife_id: number][];
+}
+
+export interface ForestPerson {
+  id: number;
+  full_name: string;
+  gender: "M" | "F" | null;
+  birth_date: string | null;
+  death_date: string | null;
+  father_id: number | null;
+  mother_id: number | null;
+}
+
 /* --- relationship finder -------------------------------------------------- */
 
 export interface RelationshipPathStep {
